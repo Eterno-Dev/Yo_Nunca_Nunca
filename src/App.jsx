@@ -238,9 +238,10 @@ function App() {
         <div className="add-view">
           <div className="card" style={{minHeight: 'auto', padding: '30px'}}>
              <h2 className="modal-title" style={{marginBottom: '20px'}}>Escribe tu frase</h2>
+             <div className="prefix-text">Yo nunca nunca...</div>
              <textarea
                 className="textarea-custom"
-                placeholder="Ej: he enviado un mensaje a mi ex estando de fiesta..."
+                placeholder="he enviado un mensaje a mi ex estando de fiesta..."
                 value={newQuestionText}
                 onChange={(e) => setNewQuestionText(e.target.value)}
                 autoFocus

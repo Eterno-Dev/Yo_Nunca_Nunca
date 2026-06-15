@@ -1,12 +1,15 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Plus, X, RefreshCw, Flame, List, Edit2, Trash2, ChevronLeft, Save, Download, Upload } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Plus, X, RefreshCw, Flame, List, Edit2, Trash2, ChevronLeft, Save } from 'lucide-react';
 import { defaultQuestions } from './questions';
+import { db } from './firebase';
+import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 
 function App() {
   const [questions, setQuestions] = useState([]);
   const [currentQuestion, setCurrentQuestion] = useState(null);
   const [isAnimating, setIsAnimating] = useState(false);
   const [view, setView] = useState('play'); // 'play', 'add', 'manage'
+  const [isLoading, setIsLoading] = useState(true);
   
   // States for Add/Edit
   const [newQuestionText, setNewQuestionText] = useState('');
@@ -14,29 +17,44 @@ function App() {
   const [editText, setEditText] = useState('');
   
   const [seenIndices, setSeenIndices] = useState(new Set());
-  const fileInputRef = useRef(null);
 
-  // Initialize questions from local storage or defaults on first load
+  // Firestore connection
   useEffect(() => {
-    const savedQuestions = localStorage.getItem('yoNuncaQuestions');
-    if (savedQuestions) {
-      setQuestions(JSON.parse(savedQuestions));
-    } else {
-      setQuestions(defaultQuestions);
-      localStorage.setItem('yoNuncaQuestions', JSON.stringify(defaultQuestions));
-    }
+    const docRef = doc(db, 'game', 'state');
+    
+    const unsubscribe = onSnapshot(docRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        setQuestions(data.questions || []);
+      } else {
+        // Initialize if document doesn't exist
+        setDoc(docRef, { questions: defaultQuestions });
+        setQuestions(defaultQuestions);
+      }
+      setIsLoading(false);
+    }, (error) => {
+      console.error("Error al conectar con Firebase:", error);
+      setIsLoading(false);
+    });
+
+    return () => unsubscribe();
   }, []);
 
   // Pick a random question when questions array is ready and currentQuestion is null
   useEffect(() => {
-    if (questions.length > 0 && currentQuestion === null && view === 'play') {
+    if (!isLoading && questions.length > 0 && currentQuestion === null && view === 'play') {
       pickNextQuestion();
     }
-  }, [questions, currentQuestion, view]);
+  }, [questions, currentQuestion, view, isLoading]);
 
-  const saveToStorage = (updatedQuestions) => {
-    setQuestions(updatedQuestions);
-    localStorage.setItem('yoNuncaQuestions', JSON.stringify(updatedQuestions));
+  const saveToFirebase = async (updatedQuestions) => {
+    try {
+      const docRef = doc(db, 'game', 'state');
+      await setDoc(docRef, { questions: updatedQuestions }, { merge: true });
+    } catch (error) {
+      console.error("Error guardando en Firebase:", error);
+      alert("Hubo un error al guardar. Comprueba que activaste Firebase Firestore en Modo Prueba.");
+    }
   };
 
   const pickNextQuestion = useCallback(() => {
@@ -77,15 +95,15 @@ function App() {
   const handleSaveNewQuestion = () => {
     if (!newQuestionText.trim()) return;
     const formattedText = formatQuestion(newQuestionText);
-    saveToStorage([...questions, formattedText]);
+    saveToFirebase([...questions, formattedText]);
     setNewQuestionText('');
     setView('play');
   };
 
   const handleDelete = (index) => {
-    if(window.confirm("¿Estás seguro de que quieres borrar esta frase?")) {
+    if(window.confirm("¿Estás seguro de que quieres borrar esta frase para TODO EL MUNDO?")) {
       const updated = questions.filter((_, i) => i !== index);
-      saveToStorage(updated);
+      saveToFirebase(updated);
       setSeenIndices(new Set());
       if (currentQuestion === questions[index]) {
         setCurrentQuestion(null);
@@ -103,7 +121,7 @@ function App() {
     const formattedText = formatQuestion(editText);
     const updated = [...questions];
     updated[index] = formattedText;
-    saveToStorage(updated);
+    saveToFirebase(updated);
     setEditingIndex(null);
     setEditText('');
     
@@ -112,48 +130,14 @@ function App() {
     }
   };
 
-  const handleExport = () => {
-    const dataStr = JSON.stringify(questions, null, 2);
-    const blob = new Blob([dataStr], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'yo-nunca-preguntas.json';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
-  const handleImportClick = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const importedQuestions = JSON.parse(event.target.result);
-        if (Array.isArray(importedQuestions) && importedQuestions.length > 0 && typeof importedQuestions[0] === 'string') {
-          if (window.confirm(`Se han encontrado ${importedQuestions.length} frases. Esto sobrescribirá tus frases actuales. ¿Continuar?`)) {
-            saveToStorage(importedQuestions);
-            setSeenIndices(new Set());
-            setCurrentQuestion(null);
-            alert("Frases importadas correctamente.");
-          }
-        } else {
-          alert("El archivo no tiene un formato válido de preguntas.");
-        }
-      } catch (err) {
-        alert("Error al leer el archivo JSON.");
-      }
-    };
-    reader.readAsText(file);
-    e.target.value = null; // Reset input
-  };
+  if (isLoading) {
+    return (
+      <div className="app-container" style={{justifyContent: 'center', alignItems: 'center'}}>
+        <RefreshCw size={40} className="spin" color="white" />
+        <p style={{marginTop: '20px', color: 'white'}}>Conectando a la nube...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="app-container">
@@ -179,25 +163,7 @@ function App() {
             <div className="logo" style={{fontSize: '20px'}}>
               {view === 'manage' ? 'Gestionar Frases' : 'Nueva Frase'}
             </div>
-            {view === 'manage' ? (
-              <div className="header-actions">
-                <button className="icon-btn small" onClick={handleExport} aria-label="Exportar" title="Exportar JSON">
-                  <Download size={18} />
-                </button>
-                <button className="icon-btn small" onClick={handleImportClick} aria-label="Importar" title="Importar JSON">
-                  <Upload size={18} />
-                </button>
-                <input 
-                  type="file" 
-                  accept=".json" 
-                  ref={fileInputRef} 
-                  onChange={handleFileChange} 
-                  style={{display: 'none'}} 
-                />
-              </div>
-            ) : (
-              <div style={{width: 44}}></div>
-            )}
+            <div style={{width: 44}}></div>
           </>
         )}
       </header>

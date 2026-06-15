@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, X, RefreshCw, Flame, List, Edit2, Trash2, ChevronLeft, Save } from 'lucide-react';
+import { Plus, X, RefreshCw, Flame, List, Edit2, Trash2, ChevronLeft, Save, Play } from 'lucide-react';
 import { defaultQuestions } from './questions';
 import { db } from './firebase';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
@@ -8,7 +8,7 @@ function App() {
   const [questions, setQuestions] = useState([]);
   const [currentQuestion, setCurrentQuestion] = useState(null);
   const [isAnimating, setIsAnimating] = useState(false);
-  const [view, setView] = useState('play'); // 'play', 'add', 'manage'
+  const [view, setView] = useState('home'); // 'home', 'play', 'add', 'manage'
   const [isLoading, setIsLoading] = useState(true);
   
   // States for Add/Edit
@@ -40,7 +40,7 @@ function App() {
     return () => unsubscribe();
   }, []);
 
-  // Pick a random question when questions array is ready and currentQuestion is null
+  // Pick a random question automatically when in play view and no current question
   useEffect(() => {
     if (!isLoading && questions.length > 0 && currentQuestion === null && view === 'play') {
       pickNextQuestion();
@@ -55,6 +55,12 @@ function App() {
       console.error("Error guardando en Firebase:", error);
       alert("Hubo un error al guardar. Comprueba que activaste Firebase Firestore en Modo Prueba.");
     }
+  };
+
+  const startGame = () => {
+    setSeenIndices(new Set());
+    setCurrentQuestion(null);
+    setView('play');
   };
 
   const pickNextQuestion = useCallback(() => {
@@ -97,7 +103,7 @@ function App() {
     const formattedText = formatQuestion(newQuestionText);
     saveToFirebase([...questions, formattedText]);
     setNewQuestionText('');
-    setView('play');
+    setView('home'); // Return to home instead of play
   };
 
   const handleDelete = (index) => {
@@ -143,21 +149,25 @@ function App() {
     <div className="app-container">
       {/* Header */}
       <header className="header">
-        {view === 'play' ? (
+        {view === 'home' && (
+          <div className="logo">Yo Nunca Nunca 🔥</div>
+        )}
+        
+        {view === 'play' && (
           <>
-            <div className="logo">Nunca Nunca</div>
-            <div className="header-actions">
-              <button className="icon-btn" onClick={() => setView('manage')} aria-label="Gestionar frases">
-                <List size={22} />
-              </button>
-              <button className="icon-btn" onClick={() => setView('add')} aria-label="Añadir frase">
-                <Plus size={24} />
-              </button>
+            <button className="icon-btn" onClick={() => setView('home')} aria-label="Volver">
+              <ChevronLeft size={24} />
+            </button>
+            <div className="live-counter">
+              {seenIndices.size} / {questions.length}
             </div>
+            <div style={{width: 44}}></div> {/* spacer */}
           </>
-        ) : (
+        )}
+
+        {(view === 'manage' || view === 'add') && (
           <>
-            <button className="icon-btn" onClick={() => setView('play')} aria-label="Volver">
+            <button className="icon-btn" onClick={() => setView('home')} aria-label="Volver">
               <ChevronLeft size={24} />
             </button>
             <div className="logo" style={{fontSize: '20px'}}>
@@ -168,12 +178,35 @@ function App() {
         )}
       </header>
 
-      {/* Main Content Area */}
+      {/* Home View */}
+      {view === 'home' && (
+        <div className="home-view">
+           <div className="hero-section">
+              <div className="flame-icon-big">🔥</div>
+              <h1 className="hero-title">¿Preparados?</h1>
+              <p className="hero-subtitle">Descubre los secretos más oscuros de tus amigos.</p>
+           </div>
+           
+           <div className="home-menu">
+              <button className="menu-btn primary" onClick={startGame}>
+                <Play size={20} /> Comenzar Partida
+              </button>
+              <button className="menu-btn secondary" onClick={() => setView('add')}>
+                <Plus size={20} /> Añadir Frase
+              </button>
+              <button className="menu-btn secondary" onClick={() => setView('manage')}>
+                <List size={20} /> Gestionar Frases
+              </button>
+           </div>
+        </div>
+      )}
+
+      {/* Main Content Area (Play) */}
       <main className="main-content" style={{ display: view === 'play' ? 'flex' : 'none' }}>
         <div className={`card ${isAnimating ? 'animating' : ''}`}>
           <div className="card-subtitle">
             <Flame size={16} style={{ display: 'inline', marginRight: '6px', verticalAlign: 'middle' }} />
-            Nivel Extremo
+            Nivel Spicy
           </div>
           {currentQuestion ? (
             <h1 className="question-text">{currentQuestion}</h1>
@@ -192,6 +225,9 @@ function App() {
       {view === 'manage' && (
         <div className="manage-view">
           <div className="list-container">
+            <div className="stats-bar">
+               Total en base de datos: <strong>{questions.length} frases</strong>
+            </div>
             {questions.map((q, index) => (
               <div key={index} className="list-item">
                 {editingIndex === index ? (
